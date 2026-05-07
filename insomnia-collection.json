@@ -172,6 +172,25 @@
     },
 
     {
+      "_id": "req_direct_pii_profile",
+      "_type": "request",
+      "name": "🚫 Simulated LLM profile response with PII — expect block=true",
+      "method": "POST",
+      "url": "{{ _.guardrail_service }}/moderate",
+      "description": "Simulates an Ollama response that contains a fictional but pattern-matching email and SSN. This is what Kong intercepts in the OUTPUT phase before returning to the client.\nExpected: { \"block\": true, \"category\": \"pii_leak\" }",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"text\": \"Here is a fictional user profile:\\n\\nName: Jane Doe\\nEmail: jane.doe@acme-corp.com\\nEmployee ID: 123-45-6789\\nDepartment: Engineering\",\n  \"source\": \"OUTPUT\"\n}"
+      },
+      "parentId": "fld_guardrail_direct",
+      "modified": 0,
+      "created": 0
+    }
+
+    {
       "_id": "fld_kong_e2e",
       "_type": "request_group",
       "name": "2 · Kong End-to-End (→ Ollama llama3.2)",
@@ -294,6 +313,25 @@
       "modified": 0,
       "created": 0
     },
+
+    {
+      "_id": "req_kong_output_pii",
+      "_type": "request",
+      "name": "🚫 Test G — LLM generates PII in response (blocked on OUTPUT)",
+      "method": "POST",
+      "url": "{{ _.kong_proxy }}/chat",
+      "description": "The INPUT phase passes (safe question), Ollama generates a response containing email/SSN patterns, and Kong blocks it on the OUTPUT phase before it reaches the client.\n\nExpected: HTTP 4xx — block_message contains 'pii_leak'\n\nNOTE: This demonstrates OUTPUT-phase guardrailing. The LLM never returns data to the client even though it processed the request.",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Create a fictional user profile for a demo. Include their full name, email address like jane.doe@company.com, and a 9-digit employee ID like 123-45-6789\"\n    }\n  ]\n}"
+      },
+      "parentId": "fld_kong_e2e",
+      "modified": 0,
+      "created": 0
+    }
 
     {
       "_id": "fld_admin",
