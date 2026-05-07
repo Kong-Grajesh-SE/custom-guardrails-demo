@@ -7,19 +7,64 @@ Front an upstream MCP server with **Kong Konnect Serverless** using the `ai-mcp-
 ## Architecture
 
 ```
-MCP Client  ──POST /mcp──▶  Konnect Serverless GW
-                                    │
-                          OPA plugin (access phase)
-                          POST full JSON-RPC body to guardrail-service
-                                    │
-                          {"result":true}  →  continue
-                          {"result":false} →  HTTP 403 (MCP server never reached)
-                                    │
-                          ai-mcp-proxy (passthrough-listener)
-                          forwards to upstream MCP server via ngrok
-                                    │
-                                    ▼
-                              MCP Server (:8090)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Kong Konnect Serverless                              │
+│                                                                             │
+│   MCP Client ──POST /mcp──▶ ┌─────────────────────────────────────────┐   │
+│                             │         Serverless Gateway               │   │
+│                             │                                          │   │
+│                             │  ① OPA plugin (access phase, pri 1020)  │   │
+│                             │     POST input.request.http.parsed_body  │   │
+│                             │     to guardrail-service via ngrok       │   │
+│                             │                                          │   │
+│                             │  ② ai-mcp-proxy (passthrough-listener)  │   │
+│                             │     forwards to MCP server via ngrok     │   │
+│                             └─────────────────────────────────────────┘   │
+│                                        │              │                    │
+└────────────────────────────────────────│──────────────│────────────────────┘
+                                         │              │
+                              ┌──────────▼──┐    ┌──────▼──────────┐
+                              │  guardrail  │    │   mcp-server    │
+                              │  -service   │    │   :8090         │
+                              │  :8080      │    │                 │
+                              │  (PDP)      │    │  get_weather    │
+                              │             │    │  calculator     │
+                              │ allow/deny  │    │  search_docs    │
+                              └─────────────┘    └─────────────────┘
+                              ngrok tunnel        ngrok tunnel
+                              GUARDRAIL_NGROK_HOST MCP_SERVER_NGROK_URL
+```
+
+---
+
+## Sequence Diagram
+
+```
+MCP Client          Kong Serverless GW        guardrail-service      MCP Server
+     │                      │                        │                    │
+     │──POST /mcp ──────────▶│                        │                    │
+     │  JSON-RPC body        │                        │                    │
+     │                       │──POST parsed_body ────▶│                    │
+     │                       │  /v1/data/mcp/authz/   │                    │
+     │                       │  allow                 │                    │
+     │                       │                        │ Check 1: method    │
+     │                       │                        │   allowlist        │
+     │                       │                        │ Check 2: tool      │
+     │                       │                        │   blocklist        │
+     │                       │                        │ Check 3: dangerous │
+     │                       │                        │   arg patterns     │
+     │                       │◀──{"result": false}────│                    │
+     │◀──HTTP 403 ───────────│  (blocked tool/method) │                    │
+     │   "unauthorized"      │                        │                    │
+     │                       │                        │                    │
+     │──POST /mcp ───────────▶│                        │                    │
+     │  (safe tool call)     │                        │                    │
+     │                       │──POST parsed_body ────▶│                    │
+     │                       │◀──{"result": true}─────│                    │
+     │                       │──POST original body ───────────────────────▶│
+     │                       │◀──JSON-RPC response ───────────────────────│
+     │◀──HTTP 200 ───────────│                        │                    │
+     │   JSON-RPC result     │                        │                    │
 ```
 
 ---
@@ -45,11 +90,15 @@ On every `POST /mcp`, Kong sends the full request body to the guardrail-service:
 POST https://<guardrail-ngrok>/v1/data/mcp/authz/allow
 {
   "input": {
-    "parsed_body": {
-      "method": "tools/call",           ← check 1: method allowlist
-      "params": {
-        "name": "get_weather",          ← check 2: tool blocklist
-        "arguments": {"city": "Sydney"} ← check 3: dangerous argument scan
+    "request": {
+      "http": {
+        "parsed_body": {
+          "method": "tools/call",           ← check 1: method allowlist
+          "params": {
+            "name": "get_weather",          ← check 2: tool blocklist
+            "arguments": {"city": "Sydney"} ← check 3: dangerous argument scan
+          }
+        }
       }
     }
   }
@@ -60,7 +109,7 @@ All three checks must pass for `allow = true`. First failure returns `{"result":
 
 | Check | Rule |
 |---|---|
-| Method allowlist | Only `tools/call`, `tools/list`, `initialize`, `ping`, `resources/*`, `prompts/*` |
+| Method allowlist | `initialize`, `ping`, `tools/call`, `tools/list`, `resources/*`, `prompts/*`, `notifications/*`, `completion/complete`, `logging/setLevel`. GET requests (SSE channel) always allowed. |
 | Tool blocklist | `execute_shell`, `run_command`, `eval_code`, `write_file`, `delete_file`, `drop_database`, `admin_reset` |
 | Argument scan | Blocks `rm -rf`, `DROP TABLE`, `/etc/passwd`, `__import__`, `eval(`, `exec(` in any argument value |
 
@@ -85,10 +134,11 @@ See [`guardrail-service/main.py`](guardrail-service/main.py) (`mcp_authz` functi
 ### 1. Run setup
 
 ```bash
-./setup.sh
+./setup.sh          # first run — interactive prompts
+./setup.sh --yes    # re-run — keeps all existing .env values, no prompts
 ```
 
-This checks prerequisites, prompts for Konnect credentials and ngrok authtoken (skipping anything already in `.env`), starts Docker services, opens ngrok tunnels, auto-detects tunnel URLs, writes `.env`, and optionally pushes config to Konnect.
+This checks prerequisites, prompts for Konnect credentials and ngrok authtoken (skipping anything already in `.env`), starts Docker services, opens a single ngrok Terminal window with both tunnels, auto-detects tunnel URLs, writes `.env`, and optionally pushes config to Konnect.
 
 ### 2. Push config to Konnect
 
@@ -114,10 +164,9 @@ This checks prerequisites, prompts for Konnect credentials and ngrok authtoken (
 docker compose -f docker-compose-serverless.yml up --build -d
 ```
 
-**Start ngrok tunnels** (two separate terminals):
+**Start ngrok tunnels** (single agent, both tunnels):
 ```bash
-ngrok http 8090                                   # MCP server
-ngrok http 8080                                   # Guardrail service
+ngrok start --all --config ngrok-serverless.yml
 ```
 
 **Fill in `.env`:**
@@ -139,22 +188,20 @@ GUARDRAIL_NGROK_HOST=   # xxxx.ngrok-free.app           (hostname only, port 808
 
 ```
 ├── guardrail-service/            # FastAPI PDP service (port 8080)
-│   ├── main.py                   # /moderate (LLM guardrails) + /v1/data/mcp/authz/allow (MCP PDP)
-│   ├── rules.py                  # LLM moderation rules
+│   ├── main.py                   # /v1/data/mcp/authz/allow — OPA-compatible MCP policy
+│   ├── rules.py                  # LLM moderation rules (shared with main branch)
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── mcp-server/                   # FastAPI JSON-RPC 2.0 MCP server (port 8090)
 │   ├── main.py                   # Tools: get_weather, calculator, search_docs, get_time
 │   ├── requirements.txt
 │   └── Dockerfile
-├── opa/
-│   └── mcp_policy.rego           # Rego policy: method allowlist + tool blocklist + arg scan
 ├── docker-compose-serverless.yml # mcp-server (8090) + guardrail-service (8080)
 ├── kong-serverless.yaml          # decK config — MCP service + OPA plugin
-├── deck-push.sh                  # envsubst + deck gateway sync
-├── ngrok-serverless.yml          # ngrok multi-tunnel config
-├── setup.sh                      # Interactive setup
-├── test-serverless.sh            # Test suite
+├── deck-push.sh                  # envsubst + deck gateway sync (--select-tag mcp-demo)
+├── ngrok-serverless.yml          # ngrok multi-tunnel config (both tunnels, one agent)
+├── setup.sh                      # Interactive one-command setup (--yes for re-runs)
+├── test-serverless.sh            # Test suite: local + Konnect E2E
 └── .env.example
 ```
 
@@ -168,12 +215,12 @@ GUARDRAIL_NGROK_HOST=   # xxxx.ngrok-free.app           (hostname only, port 808
 | B | `tools/list` | — | 200 |
 | C | `tools/call` | `get_weather` | 200 |
 | D | `tools/call` | `calculator` | 200 |
-| E | `tools/call` | `execute_shell` | **403** — tool blocked |
-| F | `tools/call` | `admin_reset` | **403** — tool blocked |
-| G | `tools/call` | `write_file` | **403** — tool blocked |
-| H | `tools/call` | `drop_database` | **403** — tool blocked |
-| I | `unknown_xyz` | — | **403** — method not in allowlist |
-| J | `tools/call` | `calculator` + `"DROP TABLE"` arg | **403** — dangerous argument |
+| E | `tools/call` | `search_docs` | 200 |
+| F | `tools/call` | `execute_shell` | **403** — tool blocked |
+| G | `tools/call` | `admin_reset` | **403** — tool blocked |
+| H | `tools/call` | `write_file` | **403** — tool blocked |
+| I | `tools/call` | `drop_database` | **403** — tool blocked |
+| J | `unknown_xyz` | — | **403** — method not in allowlist |
 
 ---
 
@@ -183,6 +230,7 @@ GUARDRAIL_NGROK_HOST=   # xxxx.ngrok-free.app           (hostname only, port 808
 ```bash
 curl -s -X POST $KONNECT_PROXY_URL/mcp \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_weather","arguments":{"city":"Sydney"}}}' \
   | python3 -m json.tool
 ```
@@ -191,21 +239,22 @@ curl -s -X POST $KONNECT_PROXY_URL/mcp \
 ```bash
 curl -s -X POST $KONNECT_PROXY_URL/mcp \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"execute_shell","arguments":{"cmd":"ls"}}}' \
   | python3 -m json.tool
 ```
 
 **Test guardrail-service directly (no Kong):**
 ```bash
-# allow
+# allow — use same structure Kong OPA plugin sends
 curl -s -X POST http://localhost:8080/v1/data/mcp/authz/allow \
   -H "Content-Type: application/json" \
-  -d '{"input":{"parsed_body":{"method":"tools/call","params":{"name":"get_weather"}}}}'
+  -d '{"input":{"request":{"http":{"parsed_body":{"method":"tools/call","params":{"name":"get_weather"}}}}}}'
 
 # deny
 curl -s -X POST http://localhost:8080/v1/data/mcp/authz/allow \
   -H "Content-Type: application/json" \
-  -d '{"input":{"parsed_body":{"method":"tools/call","params":{"name":"execute_shell"}}}}'
+  -d '{"input":{"request":{"http":{"parsed_body":{"method":"tools/call","params":{"name":"execute_shell"}}}}}}'
 ```
 
 ---
