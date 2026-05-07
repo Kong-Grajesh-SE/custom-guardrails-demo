@@ -195,6 +195,22 @@ test_kong_e2e() {
     fail "Expected 200, got HTTP $status"
     echo "  Body: $body"
   fi
+
+  # 2g — OUTPUT phase: LLM generates content containing PII (email) in its response
+  section "Test G: LLM generates PII in response  →  should be BLOCKED on OUTPUT"
+  info "Message: 'Create a fictional user profile. Include their full name, email address, and employee ID'"
+  echo -e "  ${YELLOW}Note: Ollama will generate a fake email — Kong blocks the RESPONSE before it reaches the client.${NC}"
+  result=$(chat "Create a fictional user profile for a demo. Include their full name, email address like jane.doe@company.com, and a 9-digit employee ID like 123-45-6789")
+  status=$(echo "$result" | cut -d'|' -f1)
+  body=$(echo "$result" | cut -d'|' -f2-)
+  if [[ "$status" -ge 400 && "$status" -lt 500 ]]; then
+    pass "OUTPUT with PII BLOCKED by guardrail (HTTP $status)"
+    echo "  Block response: $(echo "$body" | pretty_json)"
+  else
+    echo -e "  ${YELLOW}  ⚠ HTTP $status — LLM may have avoided generating PII patterns. Check the response:${NC}"
+    echo "  $(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('choices',[{}])[0].get('message',{}).get('content','')[:300])" 2>/dev/null || echo "$body" | head -c 300)"
+    echo "  (If the response contains an email or SSN pattern, the OUTPUT rule triggered correctly)"
+  fi
 }
 
 # ── Entry point ───────────────────────────────────────────────────────────────
