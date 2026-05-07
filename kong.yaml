@@ -1,0 +1,82 @@
+# Kong Gateway declarative configuration (DB-less mode)
+#
+# Stack:
+#   Kong Gateway Enterprise 3.14+  →  http://localhost:8000
+#   Ollama (host machine)          →  http://localhost:11434  (llama3.2)
+#   Guardrail service (Docker)     →  http://guardrail-service:8080
+#
+# Flow:
+#   Client  →  Kong (AI Proxy)  →  Ollama llama3.2
+#                     ↕
+#              AI Custom Guardrail
+#                     ↕
+#          Custom Guardrail Service (Python)
+
+_format_version: "3.0"
+
+services:
+  - name: ai-guardrail-demo
+    # Placeholder URL — Kong AI Proxy rewrites the upstream to Ollama.
+    # Keep this pointing at Ollama so Kong's DNS resolves cleanly.
+    url: http://host.docker.internal:11434
+
+    routes:
+      - name: chat-route
+        paths:
+          - /chat
+        methods:
+          - POST
+        protocols:
+          - http
+          - https
+        strip_path: false
+
+    plugins:
+      # ── 1. AI Proxy: forward requests to local Ollama llama3.2 ───────────
+      - name: ai-proxy
+        config:
+          route_type: llm/v1/chat
+          model:
+            provider: ollama
+            name: llama3.2
+            options:
+              upstream_url: http://host.docker.internal:11434
+
+      # ── 2. AI Custom Guardrail: inspect INPUT and OUTPUT ─────────────────
+      - name: ai-custom-guardrail
+        config:
+          # Inspect both the incoming request AND the LLM response
+          guarding_mode: BOTH
+
+          # Send the full conversation text (all messages joined) to the
+          # guardrail service for evaluation
+          text_source: concatenate_all_content
+
+          # Kill the request if the guardrail service is unreachable
+          stop_on_error: true
+
+          # Skip SSL for the internal guardrail service call
+          ssl_verify: false
+
+          # Timeout (ms) waiting for the guardrail service
+          timeout: 5000
+
+          # How Kong calls the guardrail service ───────────────────────────
+          request:
+            url: http://guardrail-service:8080/moderate
+            body:
+              # $(content) = the text being inspected (request or response)
+              # $(source)  = "INPUT" or "OUTPUT" (set automatically by Kong)
+              text: "$(content)"
+              source: "$(source)"
+
+          # How Kong reads the guardrail service response ──────────────────
+          response:
+            # resp.block         → boolean returned by the guardrail service
+            # resp.block_message → human-readable reason string
+            block: "$(resp.block)"
+            block_message: "$(resp.block_message)"
+
+          # Optional: surface guardrail decisions in Kong logs ─────────────
+          metrics:
+            block_reason: "$(resp.block_message)"
