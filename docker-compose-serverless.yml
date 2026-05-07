@@ -1,0 +1,41 @@
+# Local services for the Konnect Serverless MCP + guardrail-service demo.
+#
+# These run on your machine and are exposed to Konnect via ngrok:
+#
+#   mcp-server        → port 8090  → MCP_SERVER_NGROK_URL in .env
+#   guardrail-service → port 8080  → GUARDRAIL_NGROK_HOST in .env
+#
+# Start:
+#   docker compose -f docker-compose-serverless.yml up --build -d
+#
+# Then start ngrok tunnels (see ngrok-serverless.yml) and update .env.
+
+services:
+
+  # ── MCP Server ─────────────────────────────────────────────────────────────
+  mcp-server:
+    build: ./mcp-server
+    container_name: mcp-server
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Guardrail Service (PDP) ────────────────────────────────────────────────
+  # Acts as the external PDP called by the Kong OPA plugin.
+  # Exposes /v1/data/mcp/authz/allow returning {"result": true/false}.
+  guardrail-service:
+    build: ./guardrail-service
+    container_name: guardrail-service
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

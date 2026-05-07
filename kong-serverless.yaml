@@ -1,0 +1,88 @@
+# Kong Konnect Serverless — MCP + OPA Authorization (deck config)
+# =================================================================
+#
+# DEPLOY:  ./deck-push.sh
+# TEST:    ./test-serverless.sh
+#
+# Architecture:
+#   MCP Client
+#     → Konnect Serverless GW  (/mcp-passthrough)
+#         → OPA plugin (access phase) → allow/deny via mcp_policy.rego
+#         → ai-mcp-proxy (passthrough-listener) → MCP Server (ngrok)
+#
+# Plugin mode: passthrough-listener
+# ----------------------------------
+# Kong acts as an authenticated, observable entrypoint for the upstream
+# MCP server. The ai-mcp-proxy plugin runs in passthrough-listener mode:
+#   - Accepts MCP streamable-HTTP requests
+#   - Forwards them to the upstream MCP server unchanged
+#   - Generates MCP-specific observability metrics
+#   - Plugin access phase DOES fire (streamable HTTP, not SSE/WS)
+#     so OPA can inspect the body and block before forwarding
+#
+# Why passthrough-listener + OPA works (streamable HTTP):
+# -------------------------------------------------------
+# MCP streamable HTTP (3.12+) uses standard HTTP POST requests with
+# chunked transfer-encoding for streaming responses. Unlike SSE/WebSocket,
+# the request body IS buffered by Nginx and the access phase DOES execute.
+# The OPA plugin fires at priority 1020 (access phase) and can read the
+# full JSON-RPC body before ai-mcp-proxy forwards it upstream.
+#
+# Variable substitution:
+#   deck-push.sh runs `envsubst` over this file. All ${VAR} placeholders
+#   are replaced from your .env file.
+
+_format_version: "3.0"
+
+services:
+
+  # ── MCP Demo Service (passthrough-listener + OPA) ───────────────────────
+  # upstream: locally running mcp-server (port 8090) exposed via ngrok.
+  - name: mcp-demo-service
+    url: ${MCP_SERVER_NGROK_URL}
+    tags: [mcp-demo]
+
+    routes:
+      - name: mcp-passthrough-route
+        tags: [mcp-demo]
+        paths:
+          - /mcp
+        methods:
+          - POST
+          - GET
+        protocols:
+          - http
+          - https
+        strip_path: true
+
+    plugins:
+      # ── OPA authorization (access phase, priority 1020) ──────────────
+      # Fires BEFORE ai-mcp-proxy forwards the request.
+      # include_parsed_json_body_in_opa_input sends the full JSON-RPC
+      # payload so mcp_policy.rego can inspect method + tool name + args.
+      # Returns {"result": false} → Kong blocks with 403.
+      - name: opa
+        config:
+          include_body_in_opa_input: true
+          include_parsed_json_body_in_opa_input: true
+          opa_host: ${GUARDRAIL_NGROK_HOST}
+          opa_port: 443
+          opa_protocol: https
+          opa_path: /v1/data/mcp/authz/allow
+
+      # ── ai-mcp-proxy (passthrough-listener) ──────────────────────────
+      # Acts as an authenticated, observable Kong entrypoint for the
+      # upstream MCP server. Handles MCP streamable HTTP protocol.
+      # Does NOT convert tools — it passes traffic straight through.
+      # Do NOT add other AI plugins on this route.
+      - name: ai-mcp-proxy
+        config:
+          mode: passthrough-listener
+
+      # ── Request size limit ────────────────────────────────────────────
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 1
+          size_unit: megabytes
+
+

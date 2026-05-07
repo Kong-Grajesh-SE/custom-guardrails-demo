@@ -1,0 +1,29 @@
+# ngrok multi-tunnel config for the Konnect Serverless MCP + OPA demo.
+#
+# Prerequisites:
+#   1. ngrok account + authtoken set via: ngrok config add-authtoken <token>
+#
+# Start both tunnels in one command:
+#   ngrok start --all --config ngrok-serverless.yml
+#
+# After starting, copy the HTTPS URLs ngrok prints into .env:
+#   MCP_SERVER_NGROK_URL=https://<mcp-url>.ngrok-free.app
+#   GUARDRAIL_NGROK_HOST=<guardrail-url>.ngrok-free.app   (hostname only, no https://)
+
+version: "3"
+
+tunnels:
+  # ── MCP Server (port 8090) ────────────────────────────────────────────────
+  mcp-server:
+    proto: http
+    addr: 8090
+    # domain: your-mcp-server.ngrok-free.app   # uncomment if you have a reserved domain
+
+  # ── Guardrail Service / PDP (port 8080) ─────────────────────────────────
+  # Kong OPA plugin calls: POST https://<ngrok-url>/v1/data/mcp/authz/allow
+  guardrail-service:
+    proto: http
+    addr: 8080
+    # domain: your-guardrail.ngrok-free.app   # uncomment if you have a reserved domain
+
+
