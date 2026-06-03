@@ -8,36 +8,13 @@ The guardrail service is a lightweight Python/FastAPI application with configura
 
 ## Architecture
 
-```
- Client
-   │
-   │  POST /chat  (OpenAI-compatible chat payload)
-   ▼
-┌──────────────────────────────────────────┐
-│         Kong Gateway (Konnect)           │  :8000
-│                                          │
-│  ┌────────────────────────────────────┐  │
-│  │   AI Custom Guardrail plugin       │  │
-│  │   (INPUT phase)                    │  │
-│  │   → calls guardrail service        │──┼──►  http://<host>:8088/moderate
-│  └──────────────┬─────────────────────┘  │     { text: "...", source: "INPUT" }
-│                 │ allowed                │     ◄ { block: false, ... }
-│                 ▼                        │
-│  ┌────────────────────────────────────┐  │
-│  │   AI Proxy plugin                  │──┼──►  Mistral AI (mistral-small-latest)
-│  │   route_type: llm/v1/chat          │  │     https://api.mistral.ai/v1/chat/completions
-│  └──────────────┬─────────────────────┘  │
-│                 │ LLM response           │
-│                 ▼                        │
-│  ┌────────────────────────────────────┐  │
-│  │   AI Custom Guardrail plugin       │  │
-│  │   (OUTPUT phase)                   │──┼──►  http://<host>:8088/moderate
-│  └──────────────┬─────────────────────┘  │     { text: "...", source: "OUTPUT" }
-│                 │ allowed                │     ◄ { block: false, ... }
-└─────────────────┼────────────────────────┘
-                  ▼
-            Client receives response  (or 400 if blocked)
-```
+![Kong AI Custom Guardrail Architecture](images/architecture_diagram_llm.png)
+
+---
+
+## Sequence Diagram
+
+![Kong AI Custom Guardrail Sequence Flow](images/sequence_diagram_llm.png)
 
 ---
 
@@ -60,6 +37,12 @@ The guardrail service is a lightweight Python/FastAPI application with configura
 | `harmful_instruction` | Step-by-step instructions for obtaining weapons/explosives |
 
 Rules are fully customizable in [`guardrail-service/rules.py`](guardrail-service/rules.py).
+
+---
+
+## Services & Components
+
+*   🛡️ [**Guardrail Service Documentation**](guardrail-service/README.md) - Explains the inspection endpoints, customizable rules, and moderation logic.
 
 ---
 
