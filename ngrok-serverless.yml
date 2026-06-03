@@ -13,17 +13,17 @@
 version: "3"
 
 tunnels:
-  # ── MCP Server (port 8090) ────────────────────────────────────────────────
+  # ── MCP Server (port 8092) ────────────────────────────────────────────────
   mcp-server:
     proto: http
-    addr: 8090
+    addr: 8092
     # domain: your-mcp-server.ngrok-free.app   # uncomment if you have a reserved domain
 
-  # ── Guardrail Service / PDP (port 8080) ─────────────────────────────────
+  # ── Guardrail Service / PDP (port 8089) ─────────────────────────────────
   # Kong OPA plugin calls: POST https://<ngrok-url>/v1/data/mcp/authz/allow
   guardrail-service:
     proto: http
-    addr: 8080
+    addr: 8089
     # domain: your-guardrail.ngrok-free.app   # uncomment if you have a reserved domain
 
 

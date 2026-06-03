@@ -72,7 +72,7 @@ def health():
 #
 # The Kong OPA plugin POSTs to this endpoint on every /mcp request:
 #   POST /v1/data/mcp/authz/allow
-#   {"input": {"parsed_body": {"method": "...", "params": {"name": "...", "arguments": {...}}}}}
+#   {"input": {"request": {"http": {"parsed_body": {"method": "...", "params": {"name": "...", "arguments": {...}}}}}}}
 #
 # Returns {"result": true} to allow, {"result": false} to deny (Kong → HTTP 403).
 #

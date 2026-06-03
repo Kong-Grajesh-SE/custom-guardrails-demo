@@ -1,0 +1,748 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-06-03T00:00:00.000Z",
+  "__export_source": "custom-guardrails-demo/serverless-gw",
+  "resources": [
+
+    {
+      "_id": "wrk_serverless_mcp",
+      "_type": "workspace",
+      "name": "Kong Konnect Serverless — MCP + OPA Guardrails",
+      "description": "Test collection for the serverless-gw demo:\n  MCP Client → Konnect Serverless (OPA + ai-mcp-proxy) → MCP Server\n\nFolders:\n  1 · Guardrail Service (PDP) — direct hits to the Python policy service\n  2 · MCP Server — direct JSON-RPC hits (no Kong)\n  3 · Konnect Serverless E2E — full pipeline through Kong\n  4 · Konnect Control Plane API — inspect config via Konnect API",
+      "scope": "collection",
+      "parentId": null,
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "env_base",
+      "_type": "environment",
+      "name": "Base Environment",
+      "data": {
+        "konnect_proxy": "https://your-cp.us.serverless.konghq.com",
+        "mcp_server":    "http://localhost:8092",
+        "guardrail":     "http://localhost:8089",
+        "konnect_api":   "https://us.api.konghq.com",
+        "konnect_pat":   "<your-konnect-pat>",
+        "konnect_cp_name": "serverless-default"
+      },
+      "dataPropertyOrder": {
+        "&": ["konnect_proxy", "mcp_server", "guardrail", "konnect_api", "konnect_pat", "konnect_cp_name"]
+      },
+      "color": null,
+      "parentId": "wrk_serverless_mcp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "env_local",
+      "_type": "environment",
+      "name": "Local (override konnect_proxy for local-only tests)",
+      "data": {
+        "konnect_proxy": "http://localhost:8092"
+      },
+      "color": "#28a745",
+      "parentId": "wrk_serverless_mcp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "fld_pdp",
+      "_type": "request_group",
+      "name": "1 · Guardrail Service (PDP) — Direct",
+      "description": "Call the Python OPA-compatible PDP directly on :8089.\nBypasses Kong — tests the policy in isolation.\n\nKong OPA plugin sends: POST /v1/data/mcp/authz/allow\n  { \"input\": { \"request\": { \"http\": { \"parsed_body\": <JSON-RPC body> } } } }\nExpected response: { \"result\": true } or { \"result\": false }",
+      "parentId": "wrk_serverless_mcp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_health",
+      "_type": "request",
+      "name": "Health Check",
+      "method": "GET",
+      "url": "{{ _.guardrail }}/health",
+      "description": "Verify the guardrail service is up.\nExpected: { \"status\": \"ok\", \"service\": \"custom-guardrail\" }",
+      "headers": [],
+      "body": {},
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_allow_toolslist",
+      "_type": "request",
+      "name": "✅ tools/list — expect result=true",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "tools/list is in the method allowlist.\nExpected: { \"result\": true }",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"tools/list\",\n          \"params\": {}\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_allow_initialize",
+      "_type": "request",
+      "name": "✅ initialize — expect result=true",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "initialize is in the method allowlist.\nExpected: { \"result\": true }",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"initialize\",\n          \"params\": {}\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_allow_getweather",
+      "_type": "request",
+      "name": "✅ tools/call get_weather — expect result=true",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "get_weather is not in the blocked-tools list.\nExpected: { \"result\": true }",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"tools/call\",\n          \"params\": {\n            \"name\": \"get_weather\",\n            \"arguments\": { \"city\": \"Sydney\" }\n          }\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_allow_calculator",
+      "_type": "request",
+      "name": "✅ tools/call calculator — expect result=true",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "calculator with a safe expression.\nExpected: { \"result\": true }",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"tools/call\",\n          \"params\": {\n            \"name\": \"calculator\",\n            \"arguments\": { \"expression\": \"(3+5)*2\" }\n          }\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_deny_shell",
+      "_type": "request",
+      "name": "🚫 tools/call execute_shell — expect result=false",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "execute_shell is in the blocked-tools list.\nExpected: { \"result\": false }  →  Kong returns HTTP 403",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"tools/call\",\n          \"params\": {\n            \"name\": \"execute_shell\",\n            \"arguments\": { \"cmd\": \"ls -la\" }\n          }\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_deny_admin",
+      "_type": "request",
+      "name": "🚫 tools/call admin_reset — expect result=false",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "admin_reset is in the blocked-tools list.\nExpected: { \"result\": false }",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"tools/call\",\n          \"params\": {\n            \"name\": \"admin_reset\",\n            \"arguments\": {}\n          }\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_deny_write",
+      "_type": "request",
+      "name": "🚫 tools/call write_file — expect result=false",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "write_file is in the blocked-tools list.\nExpected: { \"result\": false }",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"tools/call\",\n          \"params\": {\n            \"name\": \"write_file\",\n            \"arguments\": { \"path\": \"/etc/cron.d/evil\", \"content\": \"rm -rf /\" }\n          }\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_deny_drop",
+      "_type": "request",
+      "name": "🚫 tools/call drop_database — expect result=false",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "drop_database is in the blocked-tools list.\nExpected: { \"result\": false }",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"tools/call\",\n          \"params\": {\n            \"name\": \"drop_database\",\n            \"arguments\": { \"name\": \"production\" }\n          }\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_deny_unknown_method",
+      "_type": "request",
+      "name": "🚫 unknown_xyz method — expect result=false",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "Method not in the allowlist.\nExpected: { \"result\": false }",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"unknown_xyz\",\n          \"params\": {}\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_pdp_deny_dangerous_arg",
+      "_type": "request",
+      "name": "🚫 calculator with dangerous arg (rm -rf /) — expect result=false",
+      "method": "POST",
+      "url": "{{ _.guardrail }}/v1/data/mcp/authz/allow",
+      "description": "The tool name is allowed, but the argument contains a dangerous shell pattern.\nExpected: { \"result\": false }  — argument scan fires before the tool is reached.",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"input\": {\n    \"request\": {\n      \"http\": {\n        \"parsed_body\": {\n          \"jsonrpc\": \"2.0\",\n          \"id\": 1,\n          \"method\": \"tools/call\",\n          \"params\": {\n            \"name\": \"calculator\",\n            \"arguments\": { \"expression\": \"rm -rf /\" }\n          }\n        }\n      }\n    }\n  }\n}"
+      },
+      "parentId": "fld_pdp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "fld_mcp_direct",
+      "_type": "request_group",
+      "name": "2 · MCP Server — Direct (no Kong)",
+      "description": "Call the MCP server directly on :8092.\nBypasses Kong and OPA — use to verify the server itself works.\n\nNote: dangerous tools (execute_shell etc.) still return a JSON-RPC error\nfrom the server's own defence-in-depth guard, but this is NOT a substitute\nfor the Kong/OPA layer.",
+      "parentId": "wrk_serverless_mcp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_mcp_health",
+      "_type": "request",
+      "name": "Health Check",
+      "method": "GET",
+      "url": "{{ _.mcp_server }}/health",
+      "description": "Expected: { \"status\": \"ok\", \"service\": \"demo-mcp-server\" }",
+      "headers": [],
+      "body": {},
+      "parentId": "fld_mcp_direct",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_mcp_initialize",
+      "_type": "request",
+      "name": "initialize",
+      "method": "POST",
+      "url": "{{ _.mcp_server }}/",
+      "description": "MCP handshake.\nExpected: protocolVersion, capabilities, serverInfo",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {}\n}"
+      },
+      "parentId": "fld_mcp_direct",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_mcp_tools_list",
+      "_type": "request",
+      "name": "tools/list",
+      "method": "POST",
+      "url": "{{ _.mcp_server }}/",
+      "description": "Returns all tools including the demo-only dangerous ones.\nExpected: array containing get_weather, calculator, search_docs, get_time, execute_shell, …",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/list\",\n  \"params\": {}\n}"
+      },
+      "parentId": "fld_mcp_direct",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_mcp_get_weather",
+      "_type": "request",
+      "name": "tools/call — get_weather(Sydney)",
+      "method": "POST",
+      "url": "{{ _.mcp_server }}/",
+      "description": "Expected: content[0].text with temperature, condition, humidity",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_weather\",\n    \"arguments\": { \"city\": \"Sydney\" }\n  }\n}"
+      },
+      "parentId": "fld_mcp_direct",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_mcp_calculator",
+      "_type": "request",
+      "name": "tools/call — calculator((3+5)*2)",
+      "method": "POST",
+      "url": "{{ _.mcp_server }}/",
+      "description": "Expected: content[0].text = \"(3+5)*2 = 16\"",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"calculator\",\n    \"arguments\": { \"expression\": \"(3+5)*2\" }\n  }\n}"
+      },
+      "parentId": "fld_mcp_direct",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_mcp_search_docs",
+      "_type": "request",
+      "name": "tools/call — search_docs(query=kong)",
+      "method": "POST",
+      "url": "{{ _.mcp_server }}/",
+      "description": "Expected: content[0].text listing documents that match 'kong'",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"search_docs\",\n    \"arguments\": { \"query\": \"kong\" }\n  }\n}"
+      },
+      "parentId": "fld_mcp_direct",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_mcp_get_time",
+      "_type": "request",
+      "name": "tools/call — get_time",
+      "method": "POST",
+      "url": "{{ _.mcp_server }}/",
+      "description": "Expected: content[0].text = \"Current UTC time: YYYY-MM-DD HH:MM:SS UTC\"",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_time\",\n    \"arguments\": {}\n  }\n}"
+      },
+      "parentId": "fld_mcp_direct",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_mcp_execute_shell_guard",
+      "_type": "request",
+      "name": "⚠️ tools/call — execute_shell (server guard, bypasses OPA)",
+      "method": "POST",
+      "url": "{{ _.mcp_server }}/",
+      "description": "This hits the server directly — OPA is NOT in the path.\nThe server has a local guard that still returns a JSON-RPC error.\nExpected: error.message = \"Tool 'execute_shell' is not permitted by server policy.\"\n\nNOTE: This demonstrates WHY the Kong/OPA layer matters — the server\nguard is defence-in-depth only, not the primary enforcement point.",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 5,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"execute_shell\",\n    \"arguments\": { \"cmd\": \"ls\" }\n  }\n}"
+      },
+      "parentId": "fld_mcp_direct",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "fld_konnect_e2e",
+      "_type": "request_group",
+      "name": "3 · Konnect Serverless — End-to-End",
+      "description": "Full pipeline: MCP Client → Konnect Serverless (OPA + ai-mcp-proxy) → MCP Server\n\nSet konnect_proxy in the environment to your KONNECT_PROXY_URL.\nAll requests go to POST {{ _.konnect_proxy }}/mcp",
+      "parentId": "wrk_serverless_mcp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_initialize",
+      "_type": "request",
+      "name": "✅ Test A — initialize (expect 200)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "initialize passes OPA (method in allowlist) and is forwarded to MCP server.\nExpected: HTTP 200 — protocolVersion, serverInfo",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {}\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_tools_list",
+      "_type": "request",
+      "name": "✅ Test B — tools/list (expect 200)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "tools/list passes OPA and is forwarded to MCP server.\nExpected: HTTP 200 — array of tool definitions",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/list\",\n  \"params\": {}\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_get_weather",
+      "_type": "request",
+      "name": "✅ Test C — tools/call get_weather (expect 200)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "OPA allows get_weather → forwarded → MCP server returns weather data.\nExpected: HTTP 200 — content[0].text with weather for Sydney",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_weather\",\n    \"arguments\": { \"city\": \"Sydney\" }\n  }\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_calculator",
+      "_type": "request",
+      "name": "✅ Test D — tools/call calculator (expect 200)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "OPA allows calculator with safe expression.\nExpected: HTTP 200 — \"(3+5)*2 = 16\"",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"calculator\",\n    \"arguments\": { \"expression\": \"(3+5)*2\" }\n  }\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_search_docs",
+      "_type": "request",
+      "name": "✅ Test E — tools/call search_docs (expect 200)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "OPA allows search_docs.\nExpected: HTTP 200 — document list containing Kong-related entries",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"search_docs\",\n    \"arguments\": { \"query\": \"kong\" }\n  }\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_execute_shell",
+      "_type": "request",
+      "name": "🚫 Test F — execute_shell BLOCKED (expect 403)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "OPA denies execute_shell — request never reaches the MCP server.\nExpected: HTTP 403",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"execute_shell\",\n    \"arguments\": { \"cmd\": \"ls\" }\n  }\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_admin_reset",
+      "_type": "request",
+      "name": "🚫 Test G — admin_reset BLOCKED (expect 403)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "OPA denies admin_reset.\nExpected: HTTP 403",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"admin_reset\",\n    \"arguments\": {}\n  }\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_write_file",
+      "_type": "request",
+      "name": "🚫 Test H — write_file BLOCKED (expect 403)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "OPA denies write_file.\nExpected: HTTP 403",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"write_file\",\n    \"arguments\": { \"path\": \"/tmp/evil\", \"content\": \"pwned\" }\n  }\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_drop_database",
+      "_type": "request",
+      "name": "🚫 Test I — drop_database BLOCKED (expect 403)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "OPA denies drop_database.\nExpected: HTTP 403",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"drop_database\",\n    \"arguments\": { \"name\": \"production\" }\n  }\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_bad_method",
+      "_type": "request",
+      "name": "🚫 Test J — unknown_xyz BLOCKED (expect 403)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "Method not in OPA allowlist.\nExpected: HTTP 403",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"unknown_xyz\",\n  \"params\": {}\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_e2e_dangerous_arg",
+      "_type": "request",
+      "name": "🚫 Test K — dangerous arg pattern BLOCKED (expect 403)",
+      "method": "POST",
+      "url": "{{ _.konnect_proxy }}/mcp",
+      "description": "Tool is allowed (calculator) but argument contains 'rm -rf'.\nOPA argument-pattern scan fires.\nExpected: HTTP 403",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "application/json, text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"calculator\",\n    \"arguments\": { \"expression\": \"rm -rf /\" }\n  }\n}"
+      },
+      "parentId": "fld_konnect_e2e",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "fld_konnect_api",
+      "_type": "request_group",
+      "name": "4 · Konnect Control Plane API",
+      "description": "Konnect management API — inspect configuration on your Serverless control plane.\n\nAuth: Bearer {{ _.konnect_pat }}\nBase: {{ _.konnect_api }}/v2/control-planes",
+      "parentId": "wrk_serverless_mcp",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_cp_list",
+      "_type": "request",
+      "name": "List Control Planes",
+      "method": "GET",
+      "url": "{{ _.konnect_api }}/v2/control-planes",
+      "description": "Lists all control planes in your org.\nCopy the id of your Serverless CP to use in the scoped requests below.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
+      "body": {},
+      "parentId": "fld_konnect_api",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_cp_find_by_name",
+      "_type": "request",
+      "name": "Find CP by name",
+      "method": "GET",
+      "url": "{{ _.konnect_api }}/v2/control-planes?filter[name]={{ _.konnect_cp_name }}",
+      "description": "Filter by name to quickly find your Serverless CP id.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
+      "body": {},
+      "parentId": "fld_konnect_api",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_cp_plugins",
+      "_type": "request",
+      "name": "List Plugins on CP",
+      "method": "GET",
+      "url": "{{ _.konnect_api }}/v2/control-planes/<cp-id>/core-entities/plugins",
+      "description": "Lists all plugin instances.\nReplace <cp-id> with the id from List Control Planes.\nLook for: opa and ai-mcp-proxy entries with tag mcp-demo.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
+      "body": {},
+      "parentId": "fld_konnect_api",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_cp_routes",
+      "_type": "request",
+      "name": "List Routes on CP",
+      "method": "GET",
+      "url": "{{ _.konnect_api }}/v2/control-planes/<cp-id>/core-entities/routes",
+      "description": "Lists all routes.\nReplace <cp-id> with the id from List Control Planes.\nLook for: mcp-passthrough-route with path /mcp.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
+      "body": {},
+      "parentId": "fld_konnect_api",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_cp_services",
+      "_type": "request",
+      "name": "List Services on CP",
+      "method": "GET",
+      "url": "{{ _.konnect_api }}/v2/control-planes/<cp-id>/core-entities/services",
+      "description": "Lists all services.\nReplace <cp-id> with the id from List Control Planes.\nLook for: mcp-demo-service pointing to your ngrok MCP server URL.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
+      "body": {},
+      "parentId": "fld_konnect_api",
+      "modified": 0,
+      "created": 0
+    },
+
+    {
+      "_id": "req_cp_nodes",
+      "_type": "request",
+      "name": "List Data Plane Nodes",
+      "method": "GET",
+      "url": "{{ _.konnect_api }}/v2/control-planes/<cp-id>/nodes",
+      "description": "Shows Serverless data-plane nodes and their connection status.\nReplace <cp-id> with the id from List Control Planes.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
+      "body": {},
+      "parentId": "fld_konnect_api",
+      "modified": 0,
+      "created": 0
+    }
+
+  ]
+}

@@ -9,8 +9,8 @@
 #
 # Environment:
 #   KONNECT_PROXY_URL   default: from .env
-#   MCP_URL             default: http://localhost:8090
-#   GUARDRAIL_URL      default: http://localhost:8080
+#   MCP_URL             default: http://localhost:8092
+#   GUARDRAIL_URL      default: http://localhost:8089
 # =============================================================================
 set -euo pipefail
 
@@ -18,8 +18,8 @@ set -euo pipefail
 [[ -f .env ]] && { set -o allexport; source .env; set +o allexport; }
 
 KONNECT_PROXY="${KONNECT_PROXY_URL:-}"
-MCP_URL="${MCP_URL:-http://localhost:8090}"
-GUARDRAIL_URL="${GUARDRAIL_URL:-http://localhost:8080}"
+MCP_URL="${MCP_URL:-http://localhost:8092}"
+GUARDRAIL_URL="${GUARDRAIL_URL:-http://localhost:8089}"
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'

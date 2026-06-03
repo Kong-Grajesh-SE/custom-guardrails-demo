@@ -6,8 +6,8 @@
 #
 # Architecture:
 #   MCP Client
-#     → Konnect Serverless GW  (/mcp-passthrough)
-#         → OPA plugin (access phase) → allow/deny via mcp_policy.rego
+#     → Konnect Serverless GW  (/mcp)
+#         → OPA plugin (access phase) → allow/deny via guardrail-service Python PDP
 #         → ai-mcp-proxy (passthrough-listener) → MCP Server (ngrok)
 #
 # Plugin mode: passthrough-listener
@@ -37,7 +37,7 @@ _format_version: "3.0"
 services:
 
   # ── MCP Demo Service (passthrough-listener + OPA) ───────────────────────
-  # upstream: locally running mcp-server (port 8090) exposed via ngrok.
+  # upstream: locally running mcp-server (port 8092) exposed via ngrok.
   - name: mcp-demo-service
     url: ${MCP_SERVER_NGROK_URL}
     tags: [mcp-demo]
@@ -63,7 +63,6 @@ services:
       # Returns {"result": false} → Kong blocks with 403.
       - name: opa
         config:
-          include_body_in_opa_input: true
           include_parsed_json_body_in_opa_input: true
           opa_host: ${GUARDRAIL_NGROK_HOST}
           opa_port: 443

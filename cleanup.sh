@@ -109,8 +109,13 @@ banner "Step 4 · Removing Docker volumes and networks"
 
 # Volumes created by compose
 step "Pruning unused volumes created by this project..."
-docker volume ls --filter "label=com.docker.compose.project=${PROJ_DIR}" -q | \
-  xargs -r docker volume rm 2>/dev/null && ok "Volumes removed" || true
+VOLS=$(docker volume ls --filter "label=com.docker.compose.project=${PROJ_DIR}" -q)
+if [[ -n "$VOLS" ]]; then
+  # shellcheck disable=SC2086
+  docker volume rm $VOLS 2>/dev/null && ok "Volumes removed" || warn "Some volumes could not be removed"
+else
+  ok "No project volumes found"
+fi
 
 # Remove the compose-created network (usually <proj>_default)
 NETWORK="${PROJ_DIR}_default"

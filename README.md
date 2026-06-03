@@ -6,66 +6,13 @@ Front an upstream MCP server with **Kong Konnect Serverless** using the `ai-mcp-
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Kong Konnect Serverless                              │
-│                                                                             │
-│   MCP Client ──POST /mcp──▶ ┌─────────────────────────────────────────┐   │
-│                             │         Serverless Gateway               │   │
-│                             │                                          │   │
-│                             │  ① OPA plugin (access phase, pri 1020)  │   │
-│                             │     POST input.request.http.parsed_body  │   │
-│                             │     to guardrail-service via ngrok       │   │
-│                             │                                          │   │
-│                             │  ② ai-mcp-proxy (passthrough-listener)  │   │
-│                             │     forwards to MCP server via ngrok     │   │
-│                             └─────────────────────────────────────────┘   │
-│                                        │              │                    │
-└────────────────────────────────────────│──────────────│────────────────────┘
-                                         │              │
-                              ┌──────────▼──┐    ┌──────▼──────────┐
-                              │  guardrail  │    │   mcp-server    │
-                              │  -service   │    │   :8090         │
-                              │  :8080      │    │                 │
-                              │  (PDP)      │    │  get_weather    │
-                              │             │    │  calculator     │
-                              │ allow/deny  │    │  search_docs    │
-                              └─────────────┘    └─────────────────┘
-                              ngrok tunnel        ngrok tunnel
-                              GUARDRAIL_NGROK_HOST MCP_SERVER_NGROK_URL
-```
+![Kong Konnect Serverless MCP Gateway Architecture](images/architecture_diagram.png)
 
 ---
 
 ## Sequence Diagram
 
-```
-MCP Client          Kong Serverless GW        guardrail-service      MCP Server
-     │                      │                        │                    │
-     │──POST /mcp ──────────▶│                        │                    │
-     │  JSON-RPC body        │                        │                    │
-     │                       │──POST parsed_body ────▶│                    │
-     │                       │  /v1/data/mcp/authz/   │                    │
-     │                       │  allow                 │                    │
-     │                       │                        │ Check 1: method    │
-     │                       │                        │   allowlist        │
-     │                       │                        │ Check 2: tool      │
-     │                       │                        │   blocklist        │
-     │                       │                        │ Check 3: dangerous │
-     │                       │                        │   arg patterns     │
-     │                       │◀──{"result": false}────│                    │
-     │◀──HTTP 403 ───────────│  (blocked tool/method) │                    │
-     │   "unauthorized"      │                        │                    │
-     │                       │                        │                    │
-     │──POST /mcp ───────────▶│                        │                    │
-     │  (safe tool call)     │                        │                    │
-     │                       │──POST parsed_body ────▶│                    │
-     │                       │◀──{"result": true}─────│                    │
-     │                       │──POST original body ───────────────────────▶│
-     │                       │◀──JSON-RPC response ───────────────────────│
-     │◀──HTTP 200 ───────────│                        │                    │
-     │   JSON-RPC result     │                        │                    │
-```
+![Kong Konnect Serverless MCP Sequence Diagram](images/sequence_diagram.png)
 
 ---
 
@@ -109,7 +56,7 @@ All three checks must pass for `allow = true`. First failure returns `{"result":
 
 | Check | Rule |
 |---|---|
-| Method allowlist | `initialize`, `ping`, `tools/call`, `tools/list`, `resources/*`, `prompts/*`, `notifications/*`, `completion/complete`, `logging/setLevel`. GET requests (SSE channel) always allowed. |
+| Method allowlist | `initialize`, `ping`, `tools/call`, `tools/list`, `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, `prompts/get`, `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, `notifications/roots/list_changed`, `completion/complete`, `logging/setLevel`. GET requests (SSE channel setup) always allowed. |
 | Tool blocklist | `execute_shell`, `run_command`, `eval_code`, `write_file`, `delete_file`, `drop_database`, `admin_reset` |
 | Argument scan | Blocks `rm -rf`, `DROP TABLE`, `/etc/passwd`, `__import__`, `eval(`, `exec(` in any argument value |
 
@@ -119,13 +66,17 @@ See [`guardrail-service/main.py`](guardrail-service/main.py) (`mcp_authz` functi
 
 ## Prerequisites
 
-| Requirement | Notes |
-|---|---|
-| Docker + Docker Compose | Docker Desktop for macOS |
-| ngrok account | Free tier works |
-| Konnect account | Serverless control plane + Personal Access Token |
-| `deck` CLI | `brew install kong/kong/deck` |
-| Kong AI Gateway license | Required for `ai-mcp-proxy` on Serverless |
+> **Platform:** macOS (setup.sh uses Terminal.app for ngrok windows). Linux users can start ngrok manually — see [Manual setup](#manual-setup-alternative-to-setupsh).
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Docker + Docker Compose | Docker Desktop 4.x+ | https://www.docker.com/products/docker-desktop |
+| ngrok | 3.x | `brew install ngrok/ngrok/ngrok` or https://ngrok.com/download |
+| Konnect account | — | Serverless control plane + Personal Access Token |
+| `deck` CLI | 1.38+ | `brew install kong/kong/deck` |
+| `gettext` (for `envsubst`) | — | `brew install gettext && brew link --force gettext` |
+| Python 3 | 3.9+ | `brew install python3` (used by setup.sh for URL parsing) |
+| Kong AI Gateway license | — | Required for `ai-mcp-proxy` on Serverless |
 
 ---
 
@@ -155,6 +106,18 @@ This checks prerequisites, prompts for Konnect credentials and ngrok authtoken (
 ./test-serverless.sh         # full E2E via Konnect
 ```
 
+### 4. Explore with Insomnia
+
+Import `insomnia-collection.json` into [Insomnia](https://insomnia.rest/) for a ready-to-use request collection covering all guardrail scenarios. Update the `kong_proxy` environment variable with your `KONNECT_PROXY_URL`.
+
+### 5. Tear down
+
+```bash
+./cleanup.sh            # interactive — prompts before deleting .env
+./cleanup.sh --yes      # keep .env, remove everything else
+./cleanup.sh --purge    # remove everything including .env
+```
+
 ---
 
 ## Manual setup (alternative to setup.sh)
@@ -178,30 +141,43 @@ KONNECT_TOKEN=          # cloud.konghq.com → Account → Personal Access Token
 KONNECT_CP_NAME=        # e.g. serverless-default
 KONNECT_PROXY_URL=      # https://xxxx.us.serverless.konghq.com
 
-MCP_SERVER_NGROK_URL=   # https://xxxx.ngrok-free.app  (port 8090)
-GUARDRAIL_NGROK_HOST=   # xxxx.ngrok-free.app           (hostname only, port 8080)
+MCP_SERVER_NGROK_URL=   # https://xxxx.ngrok-free.app  (port 8092)
+GUARDRAIL_NGROK_HOST=   # xxxx.ngrok-free.app           (hostname only, port 8089)
 ```
+
+---
+
+## Services & Components
+
+For detailed information on the individual services running in this demo, please refer to their respective documentation:
+
+*   🛡️ [**Guardrail Service Documentation**](guardrail-service/README.md) - Explains the OPA policy checks, tool blocklisting, and argument scanning.
+*   ⚙️ [**MCP Server Documentation**](mcp-server/README.md) - Details the available safe tools and the simulated dangerous tools used for testing.
 
 ---
 
 ## Project layout
 
 ```
-├── guardrail-service/            # FastAPI PDP service (port 8080)
+├── guardrail-service/            # FastAPI PDP service (port 8089)
+│   ├── README.md                 # Guardrail service documentation
 │   ├── main.py                   # /v1/data/mcp/authz/allow — OPA-compatible MCP policy
 │   ├── rules.py                  # LLM moderation rules (shared with main branch)
 │   ├── requirements.txt
 │   └── Dockerfile
-├── mcp-server/                   # FastAPI JSON-RPC 2.0 MCP server (port 8090)
+├── mcp-server/                   # FastAPI JSON-RPC 2.0 MCP server (port 8092)
+│   ├── README.md                 # MCP server documentation
 │   ├── main.py                   # Tools: get_weather, calculator, search_docs, get_time
 │   ├── requirements.txt
 │   └── Dockerfile
-├── docker-compose-serverless.yml # mcp-server (8090) + guardrail-service (8080)
+├── docker-compose-serverless.yml # mcp-server (8092) + guardrail-service (8089)
 ├── kong-serverless.yaml          # decK config — MCP service + OPA plugin
 ├── deck-push.sh                  # envsubst + deck gateway sync (--select-tag mcp-demo)
 ├── ngrok-serverless.yml          # ngrok multi-tunnel config (both tunnels, one agent)
 ├── setup.sh                      # Interactive one-command setup (--yes for re-runs)
+├── cleanup.sh                    # Tear down containers, images, and ngrok tunnels
 ├── test-serverless.sh            # Test suite: local + Konnect E2E
+├── insomnia-collection.json      # Insomnia request collection for manual testing
 └── .env.example
 ```
 
@@ -247,12 +223,12 @@ curl -s -X POST $KONNECT_PROXY_URL/mcp \
 **Test guardrail-service directly (no Kong):**
 ```bash
 # allow — use same structure Kong OPA plugin sends
-curl -s -X POST http://localhost:8080/v1/data/mcp/authz/allow \
+curl -s -X POST http://localhost:8089/v1/data/mcp/authz/allow \
   -H "Content-Type: application/json" \
-  -d '{"input":{"request":{"http":{"parsed_body":{"method":"tools/call","params":{"name":"get_weather"}}}}}}'
+  -d '{"input":{"request":{"http":{"parsed_body":{"method":"tools/call","params":{"name":"get_weather"}}}}}}'}
 
 # deny
-curl -s -X POST http://localhost:8080/v1/data/mcp/authz/allow \
+curl -s -X POST http://localhost:8089/v1/data/mcp/authz/allow \
   -H "Content-Type: application/json" \
   -d '{"input":{"request":{"http":{"parsed_body":{"method":"tools/call","params":{"name":"execute_shell"}}}}}}'
 ```
@@ -268,6 +244,14 @@ docker compose -f docker-compose-serverless.yml restart guardrail-service
 ```
 
 No Kong config changes needed.
+
+---
+
+## Demo caveat — ngrok bypass
+
+The MCP server's ngrok URL is publicly reachable. Any client that knows the URL can call the MCP server **directly**, bypassing Kong and OPA entirely. In this demo, the MCP server has a defence-in-depth guard (`if tool in dangerous: return error`) but it is **not** a substitute for the Kong/OPA layer.
+
+For production, restrict the MCP server to accept traffic only from Kong (e.g., shared secret header, IP allowlist, or a private ngrok tunnel).
 
 ---
 
@@ -288,6 +272,37 @@ If you have an existing PDP that returns a different format (e.g. `{"action": "d
 | **`ai-mcp-proxy` + OPA** (this demo) | ✓ Yes | OPA makes the external call natively — no sandbox restriction |
 
 `passthrough-listener` mode proxies **MCP streamable HTTP** (standard POST with chunked response). The body is buffered by Nginx so OPA and all access-phase plugins fire normally before `ai-mcp-proxy` forwards the request.
+
+---
+
+## Troubleshooting
+
+**`deck-push.sh` fails with `envsubst: command not found`**
+```bash
+brew install gettext && brew link --force gettext
+```
+
+**ngrok tunnel URLs not detected automatically**
+- Check `ngrok start --all --config ngrok-serverless.yml` is running in the Terminal window opened by `setup.sh`.
+- Verify ngrok is authenticated: `ngrok config check`
+- Paste URLs manually into `.env` and re-run `./deck-push.sh`.
+
+**Kong returns 403 on all requests (including safe ones)**
+- Confirm `GUARDRAIL_NGROK_HOST` in `.env` is the hostname only — no `https://` prefix, no trailing slash.
+- Test the guardrail service directly: `curl http://localhost:8089/health`
+- Check OPA plugin config in Konnect: Gateway Manager → your CP → Plugins.
+
+**Kong returns 502/connection refused**
+- The MCP server ngrok tunnel may have reset. Re-run ngrok and update `MCP_SERVER_NGROK_URL` in `.env`, then run `./deck-push.sh`.
+
+**Docker health check stuck**
+```bash
+docker compose -f docker-compose-serverless.yml logs mcp-server
+docker compose -f docker-compose-serverless.yml logs guardrail-service
+```
+
+**Test script reports all Konnect tests skipped**
+- `KONNECT_PROXY_URL` is not set in `.env`. Run `./setup.sh` or set it manually.
 
 ---
 

@@ -2,8 +2,8 @@
 #
 # These run on your machine and are exposed to Konnect via ngrok:
 #
-#   mcp-server        → port 8090  → MCP_SERVER_NGROK_URL in .env
-#   guardrail-service → port 8080  → GUARDRAIL_NGROK_HOST in .env
+#   mcp-server        → port 8092  → MCP_SERVER_NGROK_URL in .env
+#   guardrail-service → port 8089  → GUARDRAIL_NGROK_HOST in .env
 #
 # Start:
 #   docker compose -f docker-compose-serverless.yml up --build -d
@@ -17,7 +17,7 @@ services:
     build: ./mcp-server
     container_name: mcp-server
     ports:
-      - "8090:8090"
+      - "8092:8090"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
@@ -32,7 +32,7 @@ services:
     build: ./guardrail-service
     container_name: guardrail-service
     ports:
-      - "8080:8080"
+      - "8089:8080"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]

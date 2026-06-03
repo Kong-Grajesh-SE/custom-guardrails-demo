@@ -39,6 +39,13 @@ if ! command -v deck &>/dev/null; then
   exit 1
 fi
 
+# ── Check envsubst is installed ──────────────────────────────────────────────
+if ! command -v envsubst &>/dev/null; then
+  echo "envsubst not found. Install with:"
+  echo "  brew install gettext && brew link --force gettext   (macOS)"
+  exit 1
+fi
+
 MODE="${1:-sync}"
 
 # ── Substitute env vars into the deck YAML ────────────────────────────────────

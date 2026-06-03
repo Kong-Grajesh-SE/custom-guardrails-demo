@@ -294,7 +294,7 @@ sleep 3
 banner "Step 6 · Detecting Tunnel URLs"
 info "Polling ngrok API — waiting for both tunnels to come up..."
 
-MCP_SERVER_NGROK_URL=$(detect_ngrok_url 8090 90) || MCP_SERVER_NGROK_URL=""
+MCP_SERVER_NGROK_URL=$(detect_ngrok_url 8092 90) || MCP_SERVER_NGROK_URL=""
 if [[ -n "$MCP_SERVER_NGROK_URL" ]]; then
   env_set MCP_SERVER_NGROK_URL "$MCP_SERVER_NGROK_URL"
   ok "MCP Server URL: $MCP_SERVER_NGROK_URL"
@@ -302,7 +302,7 @@ else
   warn "Could not auto-detect MCP Server tunnel URL. Update MCP_SERVER_NGROK_URL in .env manually."
 fi
 
-GUARDRAIL_URL=$(detect_ngrok_url 8080 90) || GUARDRAIL_URL=""
+GUARDRAIL_URL=$(detect_ngrok_url 8089 90) || GUARDRAIL_URL=""
 if [[ -n "$GUARDRAIL_URL" ]]; then
   GUARDRAIL_NGROK_HOST="${GUARDRAIL_URL#https://}"
   env_set GUARDRAIL_NGROK_HOST "$GUARDRAIL_NGROK_HOST"
@@ -340,8 +340,8 @@ source_env
 
 echo ""
 echo -e "  ${BOLD}Service URLs:${NC}"
-echo -e "    MCP Server (local)        ${CYAN}http://localhost:8090${NC}"
-echo -e "    Guardrail Service (local) ${CYAN}http://localhost:8080${NC}"
+echo -e "    MCP Server (local)        ${CYAN}http://localhost:8092${NC}"
+echo -e "    Guardrail Service (local) ${CYAN}http://localhost:8089${NC}"
 echo ""
 echo -e "  ${BOLD}ngrok Tunnel URLs (in .env):${NC}"
 echo -e "    MCP       ${CYAN}${MCP_SERVER_NGROK_URL:-not yet set}${NC}"
