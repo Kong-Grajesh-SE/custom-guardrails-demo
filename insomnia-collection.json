@@ -1,14 +1,14 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2026-05-07T00:00:00.000Z",
+  "__export_date": "2026-06-03T00:00:00.000Z",
   "__export_source": "custom-guardrails-demo",
   "resources": [
     {
       "_id": "wrk_guardrails_demo",
       "_type": "workspace",
       "name": "Kong AI Custom Guardrails Demo",
-      "description": "Test collection for Kong AI Custom Guardrail plugin with local Ollama llama3.2",
+      "description": "Test collection for Kong AI Custom Guardrail plugin with Mistral AI via Konnect",
       "scope": "collection",
       "parentId": null,
       "modified": 0,
@@ -21,11 +21,13 @@
       "name": "Base Environment",
       "data": {
         "kong_proxy": "http://localhost:8000",
-        "guardrail_service": "http://localhost:8080",
-        "kong_admin": "http://localhost:8001"
+        "guardrail_service": "http://localhost:8088",
+        "konnect_api": "https://us.api.konghq.com",
+        "konnect_pat": "<your-konnect-pat>",
+        "konnect_cp_name": "PE-Bootcamp"
       },
       "dataPropertyOrder": {
-        "&": ["kong_proxy", "guardrail_service", "kong_admin"]
+        "&": ["kong_proxy", "guardrail_service", "konnect_api", "konnect_pat", "konnect_cp_name"]
       },
       "color": null,
       "parentId": "wrk_guardrails_demo",
@@ -193,8 +195,8 @@
     {
       "_id": "fld_kong_e2e",
       "_type": "request_group",
-      "name": "2 · Kong End-to-End (→ Ollama llama3.2)",
-      "description": "Full pipeline: Client → Kong (AI Custom Guardrail + AI Proxy) → Ollama llama3.2\nRequests that pass the guardrail reach the LLM — responses may take a few seconds.",
+      "name": "2 · Kong End-to-End (→ Mistral AI)",
+      "description": "Full pipeline: Client → Kong (AI Custom Guardrail + AI Proxy) → Mistral AI\nRequests that pass the guardrail reach the LLM — responses may take a few seconds.",
       "parentId": "wrk_guardrails_demo",
       "modified": 0,
       "created": 0
@@ -203,10 +205,10 @@
     {
       "_id": "req_kong_allowed",
       "_type": "request",
-      "name": "✅ Test A — Normal question (should reach Ollama)",
+      "name": "✅ Test A — Normal question (should reach Mistral)",
       "method": "POST",
       "url": "{{ _.kong_proxy }}/chat",
-      "description": "Safe question passes the guardrail and is forwarded to Ollama llama3.2.\nExpected: HTTP 200 with LLM response in choices[0].message.content",
+      "description": "Safe question passes the guardrail and is forwarded to Mistral AI.\nExpected: HTTP 200 with LLM response in choices[0].message.content",
       "headers": [
         { "name": "Content-Type", "value": "application/json" }
       ],
@@ -298,10 +300,10 @@
     {
       "_id": "req_kong_tech",
       "_type": "request",
-      "name": "✅ Test F — Safe technical question (should reach Ollama)",
+      "name": "✅ Test F — Safe technical question (should reach Mistral)",
       "method": "POST",
       "url": "{{ _.kong_proxy }}/chat",
-      "description": "Technical question passes the guardrail and reaches Ollama.\nExpected: HTTP 200 with LLM response",
+      "description": "Technical question passes the guardrail and reaches Mistral AI.\nExpected: HTTP 200 with LLM response",
       "headers": [
         { "name": "Content-Type", "value": "application/json" }
       ],
@@ -334,81 +336,91 @@
     },
 
     {
-      "_id": "fld_admin",
+      "_id": "fld_konnect",
       "_type": "request_group",
-      "name": "3 · Kong Admin API",
-      "description": "Admin API queries to inspect the running Kong configuration",
+      "name": "3 · Konnect Control Plane API",
+      "description": "Konnect management API — inspect the running configuration on your Konnect control plane.\nBase URL: https://us.api.konghq.com/v2/control-planes/<cp-id>/core-entities\nAuth: Bearer {{ _.konnect_pat }}",
       "parentId": "wrk_guardrails_demo",
       "modified": 0,
       "created": 0
     },
 
     {
-      "_id": "req_admin_info",
+      "_id": "req_konnect_cps",
       "_type": "request",
-      "name": "Kong Node Info",
+      "name": "List Control Planes",
       "method": "GET",
-      "url": "{{ _.kong_admin }}/",
-      "description": "Returns Kong version, edition, and other node-level info.\nLook for: \"edition\": \"enterprise\"",
-      "headers": [],
+      "url": "{{ _.konnect_api }}/v2/control-planes",
+      "description": "Lists all control planes in your org. Use the returned id to build further CP-scoped requests.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
       "body": {},
-      "parentId": "fld_admin",
+      "parentId": "fld_konnect",
       "modified": 0,
       "created": 0
     },
 
     {
-      "_id": "req_admin_plugins",
+      "_id": "req_konnect_services",
       "_type": "request",
-      "name": "Enabled Plugins",
+      "name": "Services (search by name)",
       "method": "GET",
-      "url": "{{ _.kong_admin }}/plugins/enabled",
-      "description": "Lists all plugins available on this Kong node.\nLook for: \"ai-custom-guardrail\" in the enabled list.",
-      "headers": [],
+      "url": "{{ _.konnect_api }}/v2/control-planes?filter[name]={{ _.konnect_cp_name }}",
+      "description": "Finds the control plane by name. Copy the id from the response for CP-scoped entity queries.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
       "body": {},
-      "parentId": "fld_admin",
+      "parentId": "fld_konnect",
       "modified": 0,
       "created": 0
     },
 
     {
-      "_id": "req_admin_services",
+      "_id": "req_konnect_plugins",
       "_type": "request",
-      "name": "Services",
+      "name": "List Plugins on CP",
       "method": "GET",
-      "url": "{{ _.kong_admin }}/services",
-      "description": "Lists configured services.",
-      "headers": [],
+      "url": "{{ _.konnect_api }}/v2/control-planes/<cp-id>/core-entities/plugins",
+      "description": "Lists all plugin instances on the control plane.\nReplace <cp-id> with the id from the List Control Planes response.\nLook for: ai-proxy and ai-custom-guardrail entries.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
       "body": {},
-      "parentId": "fld_admin",
+      "parentId": "fld_konnect",
       "modified": 0,
       "created": 0
     },
 
     {
-      "_id": "req_admin_routes",
+      "_id": "req_konnect_routes",
       "_type": "request",
-      "name": "Routes",
+      "name": "List Routes on CP",
       "method": "GET",
-      "url": "{{ _.kong_admin }}/routes",
-      "description": "Lists configured routes.",
-      "headers": [],
+      "url": "{{ _.konnect_api }}/v2/control-planes/<cp-id>/core-entities/routes",
+      "description": "Lists all routes configured on the control plane.\nReplace <cp-id> with the id from the List Control Planes response.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
       "body": {},
-      "parentId": "fld_admin",
+      "parentId": "fld_konnect",
       "modified": 0,
       "created": 0
     },
 
     {
-      "_id": "req_admin_plugins_list",
+      "_id": "req_konnect_dp_nodes",
       "_type": "request",
-      "name": "Configured Plugins",
+      "name": "List Data Plane Nodes",
       "method": "GET",
-      "url": "{{ _.kong_admin }}/plugins",
-      "description": "Lists all active plugin instances including ai-proxy and ai-custom-guardrail.",
-      "headers": [],
+      "url": "{{ _.konnect_api }}/v2/control-planes/<cp-id>/nodes",
+      "description": "Shows all data-plane nodes connected to the control plane and their connection status.",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.konnect_pat }}" }
+      ],
       "body": {},
-      "parentId": "fld_admin",
+      "parentId": "fld_konnect",
       "modified": 0,
       "created": 0
     }
