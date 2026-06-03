@@ -2,7 +2,7 @@
 # =============================================================================
 # Custom Guardrails Demo — Test Script
 #
-# Tests the full Kong → AI Proxy (Ollama llama3.2) → Guardrail pipeline.
+# Tests the full Kong → AI Proxy (Mistral) → Guardrail pipeline.
 #
 # Usage:
 #   chmod +x test.sh
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 KONG_URL="${KONG_URL:-http://localhost:8000}"
-GUARDRAIL_URL="${GUARDRAIL_URL:-http://localhost:8080}"
+GUARDRAIL_URL="${GUARDRAIL_URL:-http://localhost:8088}"
 CHAT_ENDPOINT="$KONG_URL/chat"
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -108,12 +108,12 @@ test_guardrail_direct() {
 
 # ── Section 2: End-to-end Kong Tests ──────────────────────────────────────────
 test_kong_e2e() {
-  section "End-to-End Kong Tests  (Kong → Guardrail → Ollama llama3.2)"
+  section "End-to-End Kong Tests  (Kong → Guardrail → Mistral)"
   echo -e "  Endpoint: ${CYAN}$CHAT_ENDPOINT${NC}"
-  echo -e "  ${YELLOW}Note: requests that pass the guardrail will hit Ollama — responses may take a few seconds.${NC}"
+  echo -e "  ${YELLOW}Note: requests that pass the guardrail will hit Mistral — responses may take a few seconds.${NC}"
 
   # 2a — allowed
-  section "Test A: Normal question  →  should PASS through to Ollama"
+  section "Test A: Normal question  →  should PASS through to Mistral"
   info "Message: 'What is the capital of France?'"
   result=$(chat "What is the capital of France?")
   status=$(echo "$result" | cut -d'|' -f1)
@@ -183,7 +183,7 @@ test_kong_e2e() {
   fi
 
   # 2f — safe technical question
-  section "Test F: Safe technical question  →  should PASS through to Ollama"
+  section "Test F: Safe technical question  →  should PASS through to Mistral"
   info "Message: 'Explain how Docker networking works in 2 sentences'"
   result=$(chat "Explain how Docker networking works in 2 sentences")
   status=$(echo "$result" | cut -d'|' -f1)
@@ -199,7 +199,7 @@ test_kong_e2e() {
   # 2g — OUTPUT phase: LLM generates content containing PII (email) in its response
   section "Test G: LLM generates PII in response  →  should be BLOCKED on OUTPUT"
   info "Message: 'Create a fictional user profile. Include their full name, email address, and employee ID'"
-  echo -e "  ${YELLOW}Note: Ollama will generate a fake email — Kong blocks the RESPONSE before it reaches the client.${NC}"
+  echo -e "  ${YELLOW}Note: Mistral may generate a fake email — Kong blocks the RESPONSE before it reaches the client.${NC}"
   result=$(chat "Create a fictional user profile for a demo. Include their full name, email address like jane.doe@company.com, and a 9-digit employee ID like 123-45-6789")
   status=$(echo "$result" | cut -d'|' -f1)
   body=$(echo "$result" | cut -d'|' -f2-)

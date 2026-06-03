@@ -1,24 +1,27 @@
 # Kong Gateway declarative configuration (DB-less mode)
 #
 # Stack:
-#   Kong Gateway Enterprise 3.14+  →  http://localhost:8000
-#   Ollama (host machine)          →  http://localhost:11434  (llama3.2)
-#   Guardrail service (Docker)     →  http://guardrail-service:8080
+#   Kong Gateway Enterprise 3.14+  →  hosted (DB-less)
+#   Mistral AI                     →  https://api.mistral.ai/v1
+#   Guardrail service              →  http://<GUARDRAIL_HOST>:8080
 #
 # Flow:
-#   Client  →  Kong (AI Proxy)  →  Ollama llama3.2
+#   Client  →  Kong (AI Proxy)  →  Mistral AI
 #                     ↕
 #              AI Custom Guardrail
 #                     ↕
 #          Custom Guardrail Service (Python)
+#
+# NOTE: Replace GUARDRAIL_URL and MISTRAL_API_KEY before loading.
+#       The startup.sh script does this automatically.
 
 _format_version: "3.0"
 
 services:
   - name: ai-guardrail-demo
-    # Placeholder URL — Kong AI Proxy rewrites the upstream to Ollama.
-    # Keep this pointing at Ollama so Kong's DNS resolves cleanly.
-    url: http://host.docker.internal:11434
+    url: https://api.mistral.ai/v1
+    tags:
+      - guardrail-demo
 
     routes:
       - name: chat-route
@@ -29,21 +32,30 @@ services:
         protocols:
           - http
           - https
-        strip_path: false
+        strip_path: true
+        tags:
+          - guardrail-demo
 
     plugins:
-      # ── 1. AI Proxy: forward requests to local Ollama llama3.2 ───────────
+      # ── 1. AI Proxy: forward requests to Mistral AI ─────────────────────
       - name: ai-proxy
+        tags:
+          - guardrail-demo
         config:
           route_type: llm/v1/chat
           model:
-            provider: ollama
-            name: llama3.2
+            provider: mistral
+            name: mistral-small-latest
             options:
-              upstream_url: http://host.docker.internal:11434
+              mistral_format: openai
+          auth:
+            header_name: Authorization
+            header_value: "Bearer MISTRAL_API_KEY_PLACEHOLDER"
 
       # ── 2. AI Custom Guardrail: inspect INPUT and OUTPUT ─────────────────
       - name: ai-custom-guardrail
+        tags:
+          - guardrail-demo
         config:
           # Inspect both the incoming request AND the LLM response
           guarding_mode: BOTH
@@ -63,7 +75,7 @@ services:
 
           # How Kong calls the guardrail service ───────────────────────────
           request:
-            url: http://guardrail-service:8080/moderate
+            url: GUARDRAIL_URL_PLACEHOLDER/moderate
             body:
               # $(content) = the text being inspected (request or response)
               # $(source)  = "INPUT" or "OUTPUT" (set automatically by Kong)

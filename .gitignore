@@ -157,6 +157,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Demo generated files
+kong-generated.yaml
+
 # Spyder project settings
 .spyderproject
 .spyproject

@@ -2,59 +2,13 @@
 # Custom Guardrails Demo
 #
 # Services:
-#   kong             → Kong Gateway Enterprise (DB-less, port 8000 / admin 8001)
 #   guardrail-service → Custom Python moderation API (port 8080)
 #
-# Prerequisites on the HOST machine:
-#   1. ollama serve                 # start Ollama
-#   2. ollama pull llama3.2         # pull the model
-#   3. Copy .env.example → .env and fill in KONG_LICENSE_DATA
+# Kong Gateway runs externally (hosted DB-less mode).
+# Use startup.sh to configure and launch everything.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
-
-  # ── Kong Gateway Enterprise ────────────────────────────────────────────────
-  kong:
-    image: kong/kong-gateway:3.14
-    environment:
-      # DB-less mode — config loaded from the mounted kong.yaml
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yaml
-
-      # Listener addresses
-      KONG_PROXY_LISTEN:  "0.0.0.0:8000"
-      KONG_ADMIN_LISTEN:  "0.0.0.0:8001"
-      KONG_ADMIN_GUI_LISTEN: "0.0.0.0:8002"
-      KONG_ADMIN_GUI_URL: "http://localhost:8002"
-
-      # Log to stdout/stderr for easy docker compose logs visibility
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG:  /dev/stderr
-      KONG_ADMIN_ERROR_LOG:  /dev/stderr
-
-      # Enterprise license — required for the AI Custom Guardrail plugin.
-      # Set KONG_LICENSE_DATA in your .env file.
-      KONG_LICENSE_DATA: ${KONG_LICENSE_DATA}
-
-    volumes:
-      - ./kong.yaml:/kong/declarative/kong.yaml:ro
-
-    ports:
-      - "8000:8000"   # Proxy — send test requests here
-      - "8001:8001"   # Admin API
-      - "8002:8002"   # Kong Manager (web UI)
-
-    depends_on:
-      guardrail-service:
-        condition: service_healthy
-
-    # Allows containers to reach the host via host.docker.internal
-    # (needed on Linux; Docker Desktop on macOS/Windows handles this automatically)
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    restart: on-failure
 
   # ── Custom Guardrail Service ───────────────────────────────────────────────
   guardrail-service:
@@ -62,7 +16,7 @@ services:
       context: ./guardrail-service
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"   # Direct access for testing / debugging
+      - "8088:8080"   # Direct access for testing / debugging
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 10s
