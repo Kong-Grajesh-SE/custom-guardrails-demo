@@ -141,6 +141,15 @@ curl http://localhost:8088/health
 ```
 
 > **Note:** Your Kong data plane must be able to reach this service. If the data plane runs in Docker on the same machine, use `http://host.docker.internal:8088`. If the data plane is remote, use your machine's public IP or hostname.
+>
+> **Using ngrok for remote/hosted data planes:** If your Kong data plane is hosted (e.g., Konnect Serverless Gateway) and can't reach `localhost`, use [ngrok](https://ngrok.com) to expose the guardrail service:
+>
+> ```bash
+> # IMPORTANT: Use 'ngrok http', NOT 'ngrok tcp'
+> ngrok http 8088
+> ```
+>
+> This gives you an HTTPS URL like `https://xxxx.ngrok-free.app` that Kong can reach. **Do not use `ngrok tcp`** — TCP tunnels produce `tcp://` URLs which Kong rejects, and even with the scheme changed to `http://`, TCP tunnels don't handle HTTP path routing correctly (you'll get `404 Not Found`).
 
 ### Step 2: Create a Gateway Service in Konnect
 
@@ -215,7 +224,7 @@ curl http://localhost:8088/health
    | Body → text    | `$(content)`                                 |
    | Body → source  | `$(source)`                                  |
 
-   > Replace `<GUARDRAIL_HOST>` with the address your Kong data plane can reach — e.g., `host.docker.internal` for a local Docker-based DP, or your machine's IP/hostname for remote DPs.
+   > Replace `<GUARDRAIL_HOST>` with the address your Kong data plane can reach — e.g., `host.docker.internal` for a local Docker-based DP, your machine's IP/hostname for remote DPs, or an ngrok HTTPS URL for hosted/serverless gateways.
 
    **Response Configuration:**
 
@@ -356,11 +365,97 @@ All configuration is stored in `.env` (auto-created by `startup.sh`):
 
 ---
 
+## Applying Only the Guardrail Plugin (Without Full Sync)
+
+If you already have a service and route configured in Konnect and only want to add or update the guardrail plugin, use the Konnect Admin API directly instead of `deck gateway sync`:
+
+```bash
+# Set your variables
+export KONNECT_TOKEN="<your-konnect-pat>"
+export CP_ID="<control-plane-id>"
+export SVC_ID="<service-id>"
+
+# Add the guardrail plugin to an existing service
+curl -s -X POST "https://us.api.konghq.com/v2/control-planes/$CP_ID/core-entities/services/$SVC_ID/plugins" \
+  -H "Authorization: Bearer $KONNECT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "name": "ai-custom-guardrail",
+  "config": {
+    "guarding_mode": "BOTH",
+    "text_source": "concatenate_all_content",
+    "stop_on_error": true,
+    "ssl_verify": false,
+    "timeout": 5000,
+    "request": {
+      "url": "https://<GUARDRAIL_HOST>/moderate",
+      "body": {
+        "text": "$(content)",
+        "source": "$(source)"
+      }
+    },
+    "response": {
+      "block": "$(resp.block)",
+      "block_message": "$(resp.block_message)"
+    },
+    "metrics": {
+      "block_reason": "$(resp.block_message)"
+    }
+  },
+  "tags": ["guardrail-demo"]
+}'
+```
+
+To **update** an existing guardrail plugin, use `PUT` (not `PATCH`):
+
+```bash
+export PLUGIN_ID="<guardrail-plugin-id>"
+
+curl -s -X PUT "https://us.api.konghq.com/v2/control-planes/$CP_ID/core-entities/plugins/$PLUGIN_ID" \
+  -H "Authorization: Bearer $KONNECT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "name": "ai-custom-guardrail",
+  "service": { "id": "'$SVC_ID'" },
+  "config": {
+    "guarding_mode": "BOTH",
+    "text_source": "concatenate_all_content",
+    "stop_on_error": true,
+    "ssl_verify": false,
+    "timeout": 5000,
+    "request": {
+      "url": "https://<GUARDRAIL_HOST>/moderate",
+      "body": {
+        "text": "$(content)",
+        "source": "$(source)"
+      }
+    },
+    "response": {
+      "block": "$(resp.block)",
+      "block_message": "$(resp.block_message)"
+    },
+    "metrics": {
+      "block_reason": "$(resp.block_message)"
+    }
+  },
+  "tags": ["guardrail-demo"]
+}'
+```
+
+> **Note:** The Konnect Admin API uses `PUT` for plugin updates — `PATCH` is not supported and returns `405 Method Not Allowed`.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `connection refused` from guardrail plugin | Kong DP can't reach the guardrail service | Check `GUARDRAIL_URL` — use `host.docker.internal:8088` if DP is in Docker |
+| `bad uri: tcp://...` | ngrok TCP tunnel produces `tcp://` scheme | Use `ngrok http 8088` instead of `ngrok tcp 8088` to get an `https://` URL |
+| `bad status from guardrail service: 404` | ngrok TCP tunnel doesn't handle HTTP routing | Switch to `ngrok http` — TCP tunnels forward raw bytes without HTTP path awareness |
+| `connection refused` from guardrail plugin | Kong DP can't reach the guardrail service | Check `GUARDRAIL_URL` — use `host.docker.internal:8088` if DP is in Docker, or ngrok for hosted DPs |
+| Config drift after `deck sync` | Sync targeted wrong control plane, or live config was modified after sync | Verify `--konnect-control-plane-name` matches your target CP; use `deck gateway diff` to check |
+| `405 Method Not Allowed` on plugin update | Konnect Admin API requires `PUT`, not `PATCH` | Use `PUT` with the full plugin body when updating via the Admin API |
+| `unique-plugin-per-entity constraint failed` | Guardrail plugin already exists on the service | Use `PUT` to update the existing plugin instead of `POST` to create a new one |
 | `no Route matched` (404) | Route not configured or DP hasn't synced yet | Wait 15–30s for DP config sync, or restart the DP container |
 | `must set 'model.options.mistral_format'` | Missing Mistral format config | Ensure `mistral_format: openai` is set in the AI Proxy plugin |
 | Tests B-E pass but A/F/G fail with 404 | `upstream_url` override interfering with AI Proxy | Remove `upstream_url` from AI Proxy config — the built-in Mistral provider handles routing |
